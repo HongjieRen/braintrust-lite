@@ -3,7 +3,7 @@ import { spawn } from 'child_process';
 // ─── Provider argv constants ──────────────────────────────────────────────────
 
 export const CODEX_ARGS_PREFIX = ['exec', '--json', '--skip-git-repo-check', '--ephemeral'];
-export const GEMINI_ARGS_PREFIX = ['-o', 'json', '--allowed-mcp-server-names', 'sequential-thinking'];
+export const GEMINI_ARGS_PREFIX = ['-o', 'json'];
 
 // ─── Process runner ───────────────────────────────────────────────────────────
 
