@@ -4,7 +4,8 @@
   "description": "Lightweight multi-model advisor for Claude Code — parallel Codex + Gemini consultation via MCP",
   "type": "module",
   "bin": {
-    "consult": "./bin/consult"
+    "consult": "bin/consult",
+    "braintrust-lite": "src/server.js"
   },
   "scripts": {
     "start": "node src/server.js"
@@ -15,9 +16,17 @@
   "engines": {
     "node": ">=18"
   },
+  "keywords": [
+    "mcp",
+    "claude-code",
+    "codex",
+    "gemini",
+    "multi-model",
+    "ai"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/HongjieRen/braintrust-lite.git"
+    "url": "git+https://github.com/HongjieRen/braintrust-lite.git"
   }
 }
