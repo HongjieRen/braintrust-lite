@@ -2,8 +2,10 @@ import {
   runProcess,
   adaptCodex,
   adaptGemini,
+  adaptClaude,
   CODEX_ARGS_PREFIX,
   GEMINI_ARGS_PREFIX,
+  CLAUDE_ARGS_PREFIX,
 } from './providers.js';
 
 const SYSTEM_PROMPT = `你是一个独立思考的高级专家。请基于自己的判断给出高质量、可执行的回答。
@@ -20,7 +22,39 @@ const PROVIDERS = {
     buildArgs: prompt => ['-p', `${SYSTEM_PROMPT}\n\n${prompt}`, ...GEMINI_ARGS_PREFIX],
     adapt: adaptGemini,
   },
+  claude: {
+    cmd: 'claude',
+    buildArgs: prompt => [...CLAUDE_ARGS_PREFIX, `${SYSTEM_PROMPT}\n\n${prompt}`],
+    adapt: adaptClaude,
+  },
 };
+
+/**
+ * Shuffle an array in-place using Fisher-Yates and return it.
+ */
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+/**
+ * Replace provider names with anonymous labels (Model A, B, C…).
+ * Order is randomised so the judge cannot infer identity from position.
+ * Returns { results: anonymized array, mapping: { 'Model A': 'gemini', … } }
+ */
+function anonymize(results) {
+  const labels = ['Model A', 'Model B', 'Model C', 'Model D', 'Model E'];
+  const shuffled = shuffle([...results]);
+  const mapping = {};
+  const anonymized = shuffled.map((r, i) => {
+    mapping[labels[i]] = r.provider;
+    return { ...r, provider: labels[i] };
+  });
+  return { results: anonymized, mapping };
+}
 
 /**
  * Run a single provider and return a normalized result object.
@@ -41,17 +75,18 @@ async function runOne(name, prompt, { cwd, timeoutMs }) {
 }
 
 /**
- * Consult Codex and/or Gemini in parallel.
+ * Consult Codex, Gemini, and/or Claude in parallel.
  *
  * @param {object} opts
  * @param {string}   opts.prompt       - The question to ask.
- * @param {string}   [opts.only]       - 'codex' | 'gemini' — only run this one.
+ * @param {string}   [opts.only]       - 'codex' | 'gemini' | 'claude' — only run this one.
  * @param {string[]} [opts.skip]       - Providers to skip.
- * @param {number}   [opts.timeoutMs]  - Per-provider timeout in ms (default 90 000).
+ * @param {number}   [opts.timeoutMs]  - Per-provider timeout in ms (default 90 000). 0 = no timeout.
  * @param {string}   [opts.cwd]        - Working directory for subprocesses.
- * @returns {Promise<Array<{provider, content, duration_ms, error}>>}
+ * @param {boolean}  [opts.blind]      - Anonymise provider names (default true).
+ * @returns {Promise<{ results: Array, mapping: object|null }>}
  */
-export async function consult({ prompt, only, skip = [], timeoutMs = 90_000, cwd } = {}) {
+export async function consult({ prompt, only, skip = [], timeoutMs = 90_000, cwd, blind = true } = {}) {
   const targets = Object.keys(PROVIDERS)
     .filter(name => (only ? name === only : true))
     .filter(name => !skip.includes(name));
@@ -64,9 +99,14 @@ export async function consult({ prompt, only, skip = [], timeoutMs = 90_000, cwd
     targets.map(name => runOne(name, prompt, { cwd, timeoutMs }))
   );
 
-  return targets.map((name, i) =>
+  const results = targets.map((name, i) =>
     settled[i].status === 'fulfilled'
       ? settled[i].value
       : { provider: name, content: '', duration_ms: 0, error: settled[i].reason?.message ?? 'unknown' }
   );
+
+  if (blind) {
+    return anonymize(results);
+  }
+  return { results, mapping: null };
 }

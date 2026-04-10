@@ -4,6 +4,7 @@ import { spawn } from 'child_process';
 
 export const CODEX_ARGS_PREFIX = ['exec', '--json', '--skip-git-repo-check', '--ephemeral'];
 export const GEMINI_ARGS_PREFIX = ['-o', 'json'];
+export const CLAUDE_ARGS_PREFIX = ['--output-format', 'json', '-p'];
 
 // ─── Process runner ───────────────────────────────────────────────────────────
 
@@ -73,6 +74,15 @@ export function adaptGemini(raw) {
   try {
     const response = parseGeminiResponse(raw.stdout);
     if (response) return { content: response, parse_mode: 'json' };
+  } catch { /* fall through */ }
+  return fallback(raw.stdout);
+}
+
+/** Parse Claude CLI JSON output → extract .result text. */
+export function adaptClaude(raw) {
+  try {
+    const j = JSON.parse(raw.stdout);
+    if (typeof j.result === 'string') return { content: j.result, parse_mode: 'json' };
   } catch { /* fall through */ }
   return fallback(raw.stdout);
 }

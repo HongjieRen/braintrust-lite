@@ -26,17 +26,21 @@ const CONSULT_TOOL = {
       },
       only: {
         type: 'string',
-        enum: ['codex', 'gemini'],
+        enum: ['codex', 'gemini', 'claude'],
         description: '只调用指定一个模型（省成本或调试）。',
       },
       skip: {
         type: 'array',
-        items: { type: 'string', enum: ['codex', 'gemini'] },
+        items: { type: 'string', enum: ['codex', 'gemini', 'claude'] },
         description: '跳过指定模型列表。',
       },
       timeout_sec: {
         type: 'number',
-        description: '每个模型的超时秒数，默认 90。',
+        description: '每个模型的超时秒数，默认 90。传 0 表示不限时，等待直到完成。',
+      },
+      blind: {
+        type: 'boolean',
+        description: '匿名化 provider 名称（默认 true）。结果以 Model A/B/C 呈现，顺序随机打乱，Judge 无法通过名字或位置判断来源。传 false 可查看真实模型名称。',
       },
       cwd: {
         type: 'string',
@@ -64,11 +68,12 @@ server.setRequestHandler(CallToolRequestSchema, async req => {
   }
 
   const args = req.params.arguments ?? {};
-  const results = await consult({
+  const { results, mapping } = await consult({
     prompt: String(args.prompt ?? ''),
     only: args.only,
     skip: Array.isArray(args.skip) ? args.skip : [],
-    timeoutMs: args.timeout_sec ? Number(args.timeout_sec) * 1000 : 90_000,
+    timeoutMs: args.timeout_sec != null ? Number(args.timeout_sec) * 1000 : 90_000,
+    blind: args.blind !== false,
     cwd: args.cwd,
   });
 
@@ -79,7 +84,7 @@ server.setRequestHandler(CallToolRequestSchema, async req => {
   }
 
   return {
-    content: [{ type: 'text', text: formatAsMarkdown(results) }],
+    content: [{ type: 'text', text: formatAsMarkdown(results, mapping) }],
   };
 });
 
