@@ -1,0 +1,78 @@
+#!/usr/bin/env node
+'use strict';
+
+// CLI entry point for braintrust-lite.
+// Usage: consult [options] "prompt"
+//        cat file | consult "review this"
+
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+import { consult } from '../src/consult.js';
+import { formatAsMarkdown, formatAsJson } from '../src/format.js';
+
+// ─── Arg parsing ──────────────────────────────────────────────────────────────
+
+const flags = { skip: [] };
+const positional = [];
+const argv = process.argv.slice(2);
+
+for (let i = 0; i < argv.length; i++) {
+  const a = argv[i];
+  if (a === '--skip') { flags.skip.push(argv[++i]); continue; }
+  if (a === '--only') { flags.only = argv[++i]; continue; }
+  if (a === '--timeout') { flags.timeout = Number(argv[++i]); continue; }
+  if (a === '--dir') { flags.dir = argv[++i]; continue; }
+  if (a === '--json') { flags.json = true; continue; }
+  if (a === '--help' || a === '-h') { printHelp(); process.exit(0); }
+  positional.push(a);
+}
+
+function printHelp() {
+  console.error(`Usage: consult [options] "your question"
+       cat file | consult "explain this"
+
+Options:
+  --only <model>     Only run one model: codex | gemini
+  --skip <model>     Skip a model (repeatable)
+  --timeout <sec>    Per-model timeout in seconds (default: 90)
+  --dir <path>       Working directory for CLI subprocesses
+  --json             Output full JSON instead of markdown
+  --help             Show this help`);
+}
+
+// ─── Prompt ───────────────────────────────────────────────────────────────────
+
+let prompt = positional.join(' ');
+
+if (!process.stdin.isTTY) {
+  const stdin = readFileSync(0, 'utf8').trim();
+  if (stdin) prompt = prompt ? `${prompt}\n\n<context>\n${stdin}\n</context>` : stdin;
+}
+
+if (!prompt) {
+  printHelp();
+  process.exit(1);
+}
+
+// ─── Run ─────────────────────────────────────────────────────────────────────
+
+const results = await consult({
+  prompt,
+  only: flags.only,
+  skip: flags.skip,
+  timeoutMs: flags.timeout ? flags.timeout * 1000 : 90_000,
+  cwd: flags.dir ? resolve(flags.dir) : undefined,
+});
+
+// Progress summary to stderr
+for (const r of results) {
+  const status = r.error ? `⚠ ${r.error}` : `✓ ${(r.duration_ms / 1000).toFixed(1)}s`;
+  process.stderr.write(`[${r.provider}: ${status}]\n`);
+}
+
+// Output to stdout
+if (flags.json) {
+  console.log(formatAsJson(prompt, results));
+} else {
+  console.log('\n' + formatAsMarkdown(results));
+}
