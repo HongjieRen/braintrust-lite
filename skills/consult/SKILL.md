@@ -1,6 +1,7 @@
 ---
 name: consult
 description: 在处理规划/设计/架构/调研类任务时，并发调用 codex + gemini 获取第二、第三视角，主 Claude 担任 Judge 综合输出。
+origin: ECC
 ---
 
 # consult — 多模型旁路军师
