@@ -46,16 +46,13 @@ claude mcp add braintrust-lite node "$(pwd)/src/server.js"
 
 ## 安装 Skill 引导
 
-将 skill 复制到 Claude Code 全局 skill 目录（注意：不能用 symlink，路径含空格时 Claude Code 无法识别）：
+把 skill 软链到 Claude Code 全局 skill 目录，让主 Claude 知道何时该主动使用 consult：
 
 ```bash
-mkdir -p ~/.claude/skills/consult
-cp "$(pwd)/skills/consult/SKILL.md" ~/.claude/skills/consult/SKILL.md
+ln -sf "$(pwd)/skills/consult" ~/.claude/skills/consult
 ```
 
-安装后重启 Claude Code，`/consult` slash command 即可生效。
-
-**更新 skill**：每次修改 `skills/consult/SKILL.md` 后重新 cp 一次并重启 Claude Code。
+安装后可用 `/consult` slash command 激活"军师模式"引导。
 
 ---
 
