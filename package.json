@@ -1,6 +1,6 @@
 {
   "name": "braintrust-lite",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Lightweight multi-model advisor for Claude Code — parallel Codex + Gemini consultation via MCP",
   "type": "module",
   "bin": {
