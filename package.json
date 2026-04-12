@@ -1,14 +1,16 @@
 {
   "name": "braintrust-lite",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Lightweight multi-model advisor for Claude Code — parallel Codex + Gemini consultation via MCP",
   "type": "module",
   "bin": {
     "consult": "bin/consult",
-    "braintrust-lite": "src/server.js"
+    "braintrust-lite": "src/server.js",
+    "braintrust-setup": "scripts/setup.js"
   },
   "scripts": {
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "setup": "node scripts/setup.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.10.2"
@@ -28,5 +30,11 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/HongjieRen/braintrust-lite.git"
-  }
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "scripts/",
+    "skills/"
+  ]
 }

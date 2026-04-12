@@ -10,7 +10,8 @@ export const CLAUDE_ARGS_PREFIX = ['--output-format', 'json', '-p'];
 
 /**
  * Spawn a subprocess with an AbortController-based timeout.
- * Returns { stdout, stderr, code } — never rejects.
+ * Returns { stdout, stderr, code, error_type } — never rejects.
+ * error_type: 'enoent' | 'timeout' | 'nonzero' | 'spawn_error' | null
  */
 export function runProcess(cmd, args, { cwd, timeoutMs } = {}) {
   const ac = new AbortController();
@@ -28,23 +29,28 @@ export function runProcess(cmd, args, { cwd, timeoutMs } = {}) {
   const timer = timeoutMs ? setTimeout(() => ac.abort(), timeoutMs) : null;
 
   return new Promise(resolve => {
-    const done = code => {
+    let resolved = false;
+    const done = (code, error_type = null) => {
+      if (resolved) return;
+      resolved = true;
       if (timer) clearTimeout(timer);
-      resolve({ stdout, stderr, code });
+      resolve({ stdout, stderr, code, error_type });
     };
-    proc.on('close', done);
-    proc.on('error', err => done(err.name === 'AbortError' ? 'timeout' : -1));
+    proc.on('close', code => done(code, code !== 0 ? 'nonzero' : null));
+    proc.on('error', err => {
+      if (err.name === 'AbortError') done('timeout', 'timeout');
+      else if (err.code === 'ENOENT') done(-1, 'enoent');
+      else done(-1, 'spawn_error');
+    });
   });
 }
 
 // ─── Adapters ─────────────────────────────────────────────────────────────────
 
-/** Last-resort: take the tail of raw stdout. */
 export function fallback(rawStdout) {
   return { content: rawStdout.slice(-2000).trim() || '[no output]', parse_mode: 'fallback' };
 }
 
-/** Parse Codex JSONL stream → extract the last agent_message text. */
 export function adaptCodex(raw) {
   try {
     const events = raw.stdout.trim().split('\n').flatMap(l => {
@@ -57,7 +63,6 @@ export function adaptCodex(raw) {
   return fallback(raw.stdout);
 }
 
-/** Skip any MCP startup noise before the first '{', then extract .response */
 export function parseGeminiResponse(stdout) {
   const jsonStart = stdout.indexOf('{');
   if (jsonStart === -1) return null;
@@ -69,7 +74,6 @@ export function parseGeminiResponse(stdout) {
   return null;
 }
 
-/** Parse Gemini JSON output → content string. */
 export function adaptGemini(raw) {
   try {
     const response = parseGeminiResponse(raw.stdout);
@@ -78,7 +82,6 @@ export function adaptGemini(raw) {
   return fallback(raw.stdout);
 }
 
-/** Parse Claude CLI JSON output → extract .result text. */
 export function adaptClaude(raw) {
   try {
     const j = JSON.parse(raw.stdout);
