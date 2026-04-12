@@ -1,6 +1,6 @@
 ---
 name: consult
-version: 1.1.0
+version: 1.2.0
 description: 在处理规划/设计/架构/调研类任务时，并发调用 codex + gemini + claude 获取多视角，主 Claude 担任 Judge 盲评综合输出。支持多轮对话和自动更新。
 ---
 
@@ -77,23 +77,26 @@ curl -fsSL "https://raw.githubusercontent.com/HongjieRen/braintrust-lite/main/sk
 
 > "有需要深入的方向吗？可以继续追问。"
 
-用户如有 follow-up，将对话历史压缩后带入下一轮 consult：
+用户如有 follow-up，只将 **Judge 综合结论**（不含 Model A/B/C 原文）压缩后带入下一轮 consult prompt：
 
 ```
 [对话历史]
-Q1: <用户原始问题>
-A1摘要: <你上轮综合结论的一句话摘要>
+轮1 Q: <用户原始问题>
+轮1 结论: <Judge综合结论的1-2句摘要，丢弃Model A/B/C原文和REVEAL>
+
+轮2 Q: <用户follow-up>
+轮2 结论: <Judge综合结论的1-2句摘要>
 
 [本轮问题]
-<用户的 follow-up 问题>
+<用户的新问题>
 ```
+
+**为什么只带 Judge 摘要**：Judge 输出已是三模型精华的提炼，原始 Model A/B/C 回答是冗余的。每轮历史约 50–100 token，5 轮累计 < 500 token，成本可控。
 
 **多轮终止条件**：
 - 用户明确表示满意（"好了"、"谢谢"、"没有了"）
 - 用户切换到新话题
 - 已进行 5 轮（避免无限循环）
-
-每轮调用 consult 时 prompt 包含完整对话历史，让三个模型有上下文。
 
 ## consult tool 参数
 
