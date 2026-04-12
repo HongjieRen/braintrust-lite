@@ -1,15 +1,37 @@
 ---
 name: consult
-description: 在处理规划/设计/架构/调研类任务时，并发调用 codex + gemini + claude 获取多视角，主 Claude 担任 Judge 盲评综合输出。
+version: 1.1.0
+description: 在处理规划/设计/架构/调研类任务时，并发调用 codex + gemini + claude 获取多视角，主 Claude 担任 Judge 盲评综合输出。支持多轮对话和自动更新。
 ---
 
 # consult — 多模型旁路军师
+
+## Preamble（每次调用前先执行）
+
+```bash
+_REMOTE_VER=$(curl -sf --max-time 3 "https://raw.githubusercontent.com/HongjieRen/braintrust-lite/main/skills/consult/SKILL.md" | awk '/^version:/ {print $2; exit}')
+_LOCAL_VER=$(awk '/^version:/ {print $2; exit}' ~/.claude/skills/consult/SKILL.md 2>/dev/null)
+[ -n "$_REMOTE_VER" ] && [ "$_REMOTE_VER" != "$_LOCAL_VER" ] && echo "UPGRADE_AVAILABLE $_LOCAL_VER $_REMOTE_VER" || echo "UP_TO_DATE $_LOCAL_VER"
+```
+
+**如果输出 `UPGRADE_AVAILABLE <old> <new>`**：静默自动更新，不打断用户：
+```bash
+curl -fsSL "https://raw.githubusercontent.com/HongjieRen/braintrust-lite/main/skills/consult/SKILL.md" \
+  -o ~/.claude/skills/consult/SKILL.md && echo "Updated consult skill $_old → $_new"
+```
+更新完成后继续执行本次任务，在最终回复末尾附一行：`*(consult skill 已自动更新 v{old} → v{new})*`
+
+**如果输出 `UP_TO_DATE`**：直接继续，无需提示。
+
+**如果 curl 失败（无网络/超时）**：忽略，继续执行，不提示用户。
+
+---
 
 ## 这是什么
 
 `braintrust-lite` 提供的 MCP tool `mcp__braintrust_lite__consult` 会在后台并发调用 **Codex CLI**、**Gemini CLI** 和 **Claude CLI**，把三个顶尖模型的独立回答以匿名形式（Model A/B/C）交回给你。
 
-你（主 Claude）负责担任 Judge——盲评内容，提炼共识、标注独特洞见、裁决分歧，输出集大成方案。不需要额外的 Judge API 调用。
+你（主 Claude）负责担任 Judge——盲评内容，提炼共识、标注独特洞见、裁决分歧，输出集大成方案。
 
 ## 何时使用
 
@@ -28,12 +50,12 @@ description: 在处理规划/设计/架构/调研类任务时，并发调用 cod
 - 用户已经明确指定方案，不需要二次意见
 - 已知有标准答案的操作性任务
 
-## 工作流（重要）
+## 工作流：单轮
 
 ```
 1. 发一条 message，同时 parallel call：
    ├─ Task(subagent_type=Plan/Explore/..., prompt=X)
-   └─ mcp__braintrust_lite__consult(prompt=X)    ← 同一个核心问题
+   └─ mcp__braintrust_lite__consult(prompt=X, timeout_sec=<见下表>)
 
 2. 等两者都返回后，你亲自担任 Judge（盲评流程）：
 
@@ -45,13 +67,33 @@ description: 在处理规划/设计/架构/调研类任务时，并发调用 cod
 
    步骤二：评估写完后，读 REVEAL 区块中的映射表
 
-   步骤三：在回复末尾附上揭晓信息，告诉用户每个模型的真实身份：
-   例如："揭晓：Model A = Gemini，Model B = Claude，Model C = Codex"
-
-3. 输出给用户时：
-   - 不要把 consult 原文整段贴出——你是 Judge，提炼后输出
-   - 评估内容用 Model A/B/C 标注，揭晓后用真实名称
+   步骤三：在回复末尾附上揭晓信息：
+   "揭晓：Model A = Gemini，Model B = Claude，Model C = Codex"
 ```
+
+## 工作流：多轮对话
+
+每轮 Judge 输出完成后，**主动询问用户是否有后续问题**：
+
+> "有需要深入的方向吗？可以继续追问。"
+
+用户如有 follow-up，将对话历史压缩后带入下一轮 consult：
+
+```
+[对话历史]
+Q1: <用户原始问题>
+A1摘要: <你上轮综合结论的一句话摘要>
+
+[本轮问题]
+<用户的 follow-up 问题>
+```
+
+**多轮终止条件**：
+- 用户明确表示满意（"好了"、"谢谢"、"没有了"）
+- 用户切换到新话题
+- 已进行 5 轮（避免无限循环）
+
+每轮调用 consult 时 prompt 包含完整对话历史，让三个模型有上下文。
 
 ## consult tool 参数
 
