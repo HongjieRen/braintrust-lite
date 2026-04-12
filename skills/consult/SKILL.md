@@ -1,6 +1,6 @@
 ---
 name: consult
-version: 1.3.0
+version: 1.4.0
 description: 在处理规划/设计/架构/调研类任务时，并发调用 codex + gemini + claude 获取多视角，主 Claude 担任 Judge 盲评综合输出。支持渐进式多轮对话和自动更新。
 ---
 
@@ -16,6 +16,7 @@ _LOCAL_VER=$(awk '/^version:/ {print $2; exit}' ~/.claude/skills/consult/SKILL.m
 
 **如果输出 `UPGRADE_AVAILABLE <old> <new>`**：静默自动更新，不打断用户：
 ```bash
+cp ~/.claude/skills/consult/SKILL.md ~/.claude/skills/consult/SKILL.md.bak 2>/dev/null || true
 curl -fsSL "https://raw.githubusercontent.com/HongjieRen/braintrust-lite/main/skills/consult/SKILL.md" \
   -o ~/.claude/skills/consult/SKILL.md && echo "Updated consult skill $_old → $_new"
 ```
@@ -98,11 +99,13 @@ curl -fsSL "https://raw.githubusercontent.com/HongjieRen/braintrust-lite/main/sk
 ┌─ Consult 会话已启动 ──────────────────────────┐
 │ 模型：Codex · Gemini · Claude CLI              │
 │ 记忆：Balanced（可用 !brief / !deep 切换）      │
-│ 输入问题继续追问，或输入 !stop 退出             │
+│ 输入问题继续追问，或输入 /done 退出             │
 └────────────────────────────────────────────────┘
 ```
 
-### 每轮状态栏（始终显示，一行）
+### 每轮状态栏（**每轮回复第一行**，始终显示）
+
+每轮 Judge 输出**最开始**，必须先输出这一行状态栏，再输出任何正文：
 
 ```
 [Consult·R{N} | 3 models | Consensus: {High/Split}]
@@ -111,6 +114,7 @@ curl -fsSL "https://raw.githubusercontent.com/HongjieRen/braintrust-lite/main/sk
 - `R{N}` = 第几轮，帮助用户感知多轮积累
 - `Consensus: Split` 时额外显示一行分歧摘要：`Note: split on <主要分歧点>`
 - 平时无分歧则只显示 `High`，不展开
+- 若模型降级（实际跑了少于 3 个），显示 `⚠ 2/3 models` 代替 `3 models`
 
 ### 多轮上下文：渐进式加载（核心设计）
 
@@ -148,7 +152,7 @@ Current best: <当前推荐方案一句话>
 
 ### 多轮终止条件
 
-- 用户输入 `!stop`
+- 用户输入 `/done`（或 `!stop`）
 - 用户明确表示满意（"好了"、"没问题了"）
 - 用户切换到无关新话题
 - 已进行 5 轮（自动退出，告知用户可重新 `/consult`）
@@ -160,7 +164,7 @@ Current best: <当前推荐方案一句话>
 ```
 !brief    切换到精简记忆（只带 VERDICT，适合快速迭代）
 !deep     切换到完整记忆（带最近1轮 REASONING + TRADEOFFS，适合复杂设计）
-!stop     退出 Consult 会话模式
+/done     退出 Consult 会话模式（!stop 同效）
 !deltas   展开本轮三模型核心主张各一句（不显示原文全文）
 !raw      展开本轮三模型完整原始回答
 ```
