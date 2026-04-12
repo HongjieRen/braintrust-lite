@@ -1,7 +1,7 @@
 ---
 name: consult
-version: 1.2.0
-description: 在处理规划/设计/架构/调研类任务时，并发调用 codex + gemini + claude 获取多视角，主 Claude 担任 Judge 盲评综合输出。支持多轮对话和自动更新。
+version: 1.3.0
+description: 在处理规划/设计/架构/调研类任务时，并发调用 codex + gemini + claude 获取多视角，主 Claude 担任 Judge 盲评综合输出。支持渐进式多轮对话和自动更新。
 ---
 
 # consult — 多模型旁路军师
@@ -21,9 +21,8 @@ curl -fsSL "https://raw.githubusercontent.com/HongjieRen/braintrust-lite/main/sk
 ```
 更新完成后继续执行本次任务，在最终回复末尾附一行：`*(consult skill 已自动更新 v{old} → v{new})*`
 
-**如果输出 `UP_TO_DATE`**：直接继续，无需提示。
-
-**如果 curl 失败（无网络/超时）**：忽略，继续执行，不提示用户。
+**如果输出 `UP_TO_DATE`**：直接继续，无需提示。  
+**如果 curl 失败**：忽略，继续执行，不提示用户。
 
 ---
 
@@ -50,6 +49,8 @@ curl -fsSL "https://raw.githubusercontent.com/HongjieRen/braintrust-lite/main/sk
 - 用户已经明确指定方案，不需要二次意见
 - 已知有标准答案的操作性任务
 
+---
+
 ## 工作流：单轮
 
 ```
@@ -59,44 +60,112 @@ curl -fsSL "https://raw.githubusercontent.com/HongjieRen/braintrust-lite/main/sk
 
 2. 等两者都返回后，你亲自担任 Judge（盲评流程）：
 
-   步骤一：只看 Model A/B/C 的内容，完成完整评估：
-   ├─ 核心共识：多方都认同的结论
-   ├─ 独特洞见：某一方独有但有价值的内容
-   ├─ 分歧裁决：矛盾处给出判断和理由
-   └─ 集大成方案：综合最优可执行方案
+   步骤一：只看 Model A/B/C 内容，按结构完成评估（见下方 Judge 输出格式）
 
-   步骤二：评估写完后，读 REVEAL 区块中的映射表
+   步骤二：读 REVEAL 映射表
 
-   步骤三：在回复末尾附上揭晓信息：
+   步骤三：在回复末尾揭晓：
    "揭晓：Model A = Gemini，Model B = Claude，Model C = Codex"
 ```
 
-## 工作流：多轮对话
+### Judge 输出格式（必须分节，供多轮渐进加载）
 
-每轮 Judge 输出完成后，**主动询问用户是否有后续问题**：
-
-> "有需要深入的方向吗？可以继续追问。"
-
-用户如有 follow-up，只将 **Judge 综合结论**（不含 Model A/B/C 原文）压缩后带入下一轮 consult prompt：
+每轮 Judge 输出**强制使用以下四节**，不可合并：
 
 ```
-[对话历史]
-轮1 Q: <用户原始问题>
-轮1 结论: <Judge综合结论的1-2句摘要，丢弃Model A/B/C原文和REVEAL>
+### VERDICT
+<核心结论，1-3句，永远保留进历史>
 
-轮2 Q: <用户follow-up>
-轮2 结论: <Judge综合结论的1-2句摘要>
+### REASONING
+<关键推理和裁决依据，有追问才加载>
 
-[本轮问题]
-<用户的新问题>
+### TRADEOFFS
+<权衡分析、已排除方案及理由，用户问"有没有其他方案"时加载>
+
+### OPEN_QUESTIONS
+<未解决的分歧或待确认的假设，用户问"还有什么不确定"时加载>
 ```
 
-**为什么只带 Judge 摘要**：Judge 输出已是三模型精华的提炼，原始 Model A/B/C 回答是冗余的。每轮历史约 50–100 token，5 轮累计 < 500 token，成本可控。
+---
 
-**多轮终止条件**：
-- 用户明确表示满意（"好了"、"谢谢"、"没有了"）
-- 用户切换到新话题
-- 已进行 5 轮（避免无限循环）
+## 工作流：多轮对话（会话模式）
+
+### 进入信号
+
+`/consult` 触发后，第一轮回复顶部显示：
+
+```
+┌─ Consult 会话已启动 ──────────────────────────┐
+│ 模型：Codex · Gemini · Claude CLI              │
+│ 记忆：Balanced（可用 !brief / !deep 切换）      │
+│ 输入问题继续追问，或输入 !stop 退出             │
+└────────────────────────────────────────────────┘
+```
+
+### 每轮状态栏（始终显示，一行）
+
+```
+[Consult·R{N} | 3 models | Consensus: {High/Split}]
+```
+
+- `R{N}` = 第几轮，帮助用户感知多轮积累
+- `Consensus: Split` 时额外显示一行分歧摘要：`Note: split on <主要分歧点>`
+- 平时无分歧则只显示 `High`，不展开
+
+### 多轮上下文：渐进式加载（核心设计）
+
+**设计原则：不预先决定压缩多少，而是根据 follow-up 意图决定加载什么。**
+
+每轮结束后维护一个**会话状态对象**（始终随 prompt 携带，~100 token）：
+
+```
+[Session State]
+Goal: <用户核心目标>
+Constraints: <已确认约束>
+Decisions: <已做决策及理由>
+Rejected: <已排除选项>
+Open: <未解决问题>
+Current best: <当前推荐方案一句话>
+```
+
+历史内容**按意图懒加载**，不机械按轮次：
+
+| follow-up 意图 | 加载的历史内容 |
+|---------------|--------------|
+| 普通追问、深入某方向 | Session State + 所有历史 VERDICT |
+| "为什么这样判断" | + 最近1轮 REASONING |
+| "有没有其他方案" | + 最近1轮 TRADEOFFS |
+| "还有什么不确定" | + 最近1轮 OPEN_QUESTIONS |
+| "刚才某模型说的那个点" | + 按需检索原文片段（Model A/B/C 原始回答存档备查） |
+
+历史 VERDICT 全部保留（每条 ~50 token），其余节只保留最近1-2轮，更老的丢弃。
+
+### 自动降级
+
+用户回复是简单确认时（"好的"、"谢谢"、"明白了"等），**不触发三模型并发**，由主 Claude 直接响应，节省成本和延迟。
+
+判断标准：用户回复 < 20 字且不含实质性新问题。
+
+### 多轮终止条件
+
+- 用户输入 `!stop`
+- 用户明确表示满意（"好了"、"没问题了"）
+- 用户切换到无关新话题
+- 已进行 5 轮（自动退出，告知用户可重新 `/consult`）
+
+退出时显示：`── Consult 会话结束（共 {N} 轮）──`
+
+### 用户控制命令
+
+```
+!brief    切换到精简记忆（只带 VERDICT，适合快速迭代）
+!deep     切换到完整记忆（带最近1轮 REASONING + TRADEOFFS，适合复杂设计）
+!stop     退出 Consult 会话模式
+!deltas   展开本轮三模型核心主张各一句（不显示原文全文）
+!raw      展开本轮三模型完整原始回答
+```
+
+---
 
 ## consult tool 参数
 
@@ -109,36 +178,32 @@ blind       (可选) 默认 true；传 false 可直接看真实模型名称
 cwd         (可选) 子进程工作目录
 ```
 
-## timeout 选择策略（重要）
+## timeout 选择策略
 
-**你（主 Claude）负责决定 timeout_sec，用户不需要指定：**
+**你（主 Claude）负责决定 timeout_sec：**
 
-| 任务类型 | timeout_sec | 示例 |
-|---------|------------|------|
-| 深度调研、市场分析、可行性研究 | **0**（不限时） | "帮我调研 X 的可行性" |
-| 架构设计、复杂方案对比 | **0**（不限时） | "设计一个 Y 系统" |
-| 代码审查、技术选型 | 180 | "这段代码有什么问题" |
-| 简单问答、快速决策 | 90（默认） | "用 A 还是 B" |
+| 任务类型 | timeout_sec |
+|---------|------------|
+| 深度调研、市场分析、可行性研究 | **0**（不限时） |
+| 架构设计、复杂方案对比 | **0**（不限时） |
+| 代码审查、技术选型 | 180 |
+| 简单问答、快速决策 | 90（默认） |
 
-调研类任务模型需要联网搜索，耗时不可预测，**一律传 `timeout_sec: 0`**。
+调研类任务一律传 `timeout_sec: 0`。
 
 ## 成本与延迟
 
 - 每次 consult = 3 次 API 调用（codex + gemini + claude）
 - 延迟 = `max(三者响应时间)`（并发）
 - 简单问题 ~$0.05–0.20，中等 ~$0.20–0.50
+- 自动降级（简单确认）= 0 次额外 API 调用
 
 ## 终端 fallback
-
-不在 Claude Code 里时，直接用 CLI：
 
 ```bash
 consult "你的问题"
 consult --only codex "快速问题"
-consult --skip gemini "prompt"
-consult --timeout 60 "prompt"
-consult --timeout 0 "深度调研问题"   # 不限时
+consult --timeout 0 "深度调研问题"
 consult --dir /your/project "review this project"
 cat file.ts | consult "review this code"
-consult --json "prompt"   # 结构化 JSON 输出
 ```
